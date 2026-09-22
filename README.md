@@ -67,7 +67,8 @@ uv run python main.py --verbose "Explain the current state of nuclear fusion ene
 |---|---|---|
 | `OPENAI_API_KEY` | Yes (if `LLM_PROVIDER=openai`) | OpenAI API key (from [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys)) |
 | `ANTHROPIC_API_KEY` | Yes (if `LLM_PROVIDER=anthropic`) | Anthropic API key from [Anthropic Console](https://console.anthropic.com/account/keys) |
-| `LLM_PROVIDER` | No | `openai` (default) or `anthropic` |
+| `GOOGLE_API_KEY` | Yes (if `LLM_PROVIDER=gemini`) | Google Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey) (free tier available) |
+| `LLM_PROVIDER` | No | `openai` (default), `anthropic`, or `gemini` |
 
 ## Example Usage
 
