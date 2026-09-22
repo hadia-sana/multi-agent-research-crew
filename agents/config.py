@@ -6,6 +6,7 @@ import os
 
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 load_dotenv()
@@ -13,6 +14,7 @@ load_dotenv()
 _DEFAULTS: dict[str, dict[str, str]] = {
     "openai": {"model": "gpt-4o", "env_key": "OPENAI_API_KEY"},
     "anthropic": {"model": "claude-sonnet-4-5-20250929", "env_key": "ANTHROPIC_API_KEY"},
+    "gemini": {"model": "gemini-2.0-flash", "env_key": "GOOGLE_API_KEY"},
 }
 
 
@@ -32,7 +34,7 @@ def get_llm(
     Parameters
     ----------
     provider:
-        ``"openai"`` or ``"anthropic"``.
+        ``"openai"``, ``"anthropic"``, or ``"gemini"``.
     model:
         Override the default model name for the chosen provider.
     temperature:
@@ -40,7 +42,7 @@ def get_llm(
 
     Returns
     -------
-    ChatOpenAI | ChatAnthropic
+    ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI
         A ready-to-use chat model.
 
     Raises
@@ -68,5 +70,9 @@ def get_llm(
 
     if provider == "openai":
         return ChatOpenAI(model=model, temperature=temperature, api_key=api_key)
+    elif provider == "anthropic":
+        return ChatAnthropic(model=model, temperature=temperature, api_key=api_key)
+    elif provider == "gemini":
+        return ChatGoogleGenerativeAI(model=model, temperature=temperature, api_key=api_key)
 
-    return ChatAnthropic(model=model, temperature=temperature, api_key=api_key)
+    raise ValueError(f"Unhandled provider: {provider}")
