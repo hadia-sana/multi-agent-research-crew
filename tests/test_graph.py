@@ -12,7 +12,7 @@ from agents.graph import (
     fact_checker_node,
     reviewer_node,
     route_supervisor,
-    extract_verdict,
+    parse_structured_verdict,
 )
 
 
@@ -61,55 +61,52 @@ def state_with_accept_verdict():
 
 
 class TestVerdictExtraction:
-    """Tests for robust verdict extraction with word boundaries."""
+    """Tests for verdict extraction from structured JSON responses."""
 
-    def test_extract_verdict_exact_match(self):
-        """Should extract PASS when it's a standalone word."""
-        feedback = "All claims are verified and accurate.\nPASS"
-        verdict = extract_verdict(feedback, ("PASS", "FLAGGED"))
+    def test_parse_structured_verdict_pass(self):
+        """Should extract PASS from valid JSON."""
+        response = '{"verdict": "PASS", "feedback": "All claims verified."}'
+        verdict, feedback = parse_structured_verdict(response, ("PASS", "FLAGGED"))
         assert verdict == "PASS"
+        assert "All claims verified" in feedback
 
-    def test_extract_verdict_rejects_substring_match(self):
-        """Should NOT extract PASS from 'passes' or 'passed'."""
-        feedback = "This draft passes all quality checks.\nThe analysis passes validation."
-        verdict = extract_verdict(feedback, ("PASS", "FLAGGED"))
-        assert verdict == "FLAGGED"  # Should default to FLAGGED
+    def test_parse_structured_verdict_flagged(self):
+        """Should extract FLAGGED from valid JSON."""
+        response = '{"verdict": "FLAGGED", "feedback": "- Claim X is unsupported"}'
+        verdict, feedback = parse_structured_verdict(response, ("PASS", "FLAGGED"))
+        assert verdict == "FLAGGED"
+        assert "Claim X" in feedback
 
-    def test_extract_verdict_rejects_partial_word(self):
-        """Should NOT extract ACCEPT from 'unacceptable'."""
-        feedback = (
-            "This draft contains claims that are unacceptable.\n"
-            "The methodology is not acceptable under these constraints."
-        )
-        verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
-        assert verdict == "REVISE"  # Should default to REVISE
-
-    def test_extract_verdict_case_insensitive(self):
-        """Should extract verdict regardless of case."""
-        feedback = "Everything checks out.\naccept"
-        verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
-        assert verdict == "ACCEPT"
-
-    def test_extract_verdict_with_punctuation(self):
-        """Should extract verdict even if followed by punctuation."""
-        feedback = "Analysis complete. PASS!"
-        verdict = extract_verdict(feedback, ("PASS", "FLAGGED"))
-        assert verdict == "PASS"
-
-    def test_extract_verdict_multiline_last_line_matters(self):
-        """Should check only the last line of LLM output."""
-        feedback = "Some good points here.\nREVISE needed for clarity."
-        verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
+    def test_parse_structured_verdict_rejects_negation_in_prose(self):
+        """Should NOT be fooled by 'cannot accept' or negation phrases."""
+        response = '{"verdict": "REVISE", "feedback": "Cannot accept this claim due to lack of evidence"}'
+        verdict, feedback = parse_structured_verdict(response, ("ACCEPT", "REVISE"))
         assert verdict == "REVISE"
 
-    def test_extract_verdict_false_positives_prevented(self):
-        """Realistic false-positive case: contains keyword in prose."""
-        feedback = (
-            "The draft cannot be accepted due to factual errors.\n"
-            "This verdict is REVISE."
-        )
-        verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
-        assert verdict == "REVISE"  # Not fooled by "accepted" in first line
+    def test_parse_structured_verdict_case_insensitive(self):
+        """Should handle verdict values regardless of case."""
+        response = '{"verdict": "accept", "feedback": "Ready to publish."}'
+        verdict, feedback = parse_structured_verdict(response, ("ACCEPT", "REVISE"))
+        assert verdict == "ACCEPT"
+
+    def test_parse_structured_verdict_malformed_json_fails_safe(self):
+        """Should default to negative verdict on malformed JSON."""
+        response = "This is not JSON at all"
+        verdict, feedback = parse_structured_verdict(response, ("ACCEPT", "REVISE"))
+        assert verdict == "REVISE"  # Fails safe to negative verdict
+        assert feedback == response  # Returns original text
+
+    def test_parse_structured_verdict_missing_verdict_field(self):
+        """Should default to negative verdict if verdict field is missing."""
+        response = '{"feedback": "Some feedback but no verdict"}'
+        verdict, feedback = parse_structured_verdict(response, ("ACCEPT", "REVISE"))
+        assert verdict == "REVISE"  # Fails safe to negative verdict
+
+    def test_parse_structured_verdict_wrong_verdict_value(self):
+        """Should default to negative verdict if verdict value is unexpected."""
+        response = '{"verdict": "UNKNOWN", "feedback": "Not a recognized verdict"}'
+        verdict, feedback = parse_structured_verdict(response, ("ACCEPT", "REVISE"))
+        assert verdict == "REVISE"  # Fails safe to negative verdict
 
 
 class TestSupervisorRouting:
@@ -261,7 +258,7 @@ class TestFactCheckerNode:
     ):
         """Fact-Checker should return PASS when all claims are supported."""
         mock_response = Mock()
-        mock_response.content = "All claims in the draft are supported by the research notes.\nPASS"
+        mock_response.content = '{"verdict": "PASS", "feedback": "All claims in the draft are supported by the research notes."}'
         mock_llm.return_value.invoke.return_value = mock_response
 
         result = fact_checker_node(state_with_draft)
@@ -273,10 +270,8 @@ class TestFactCheckerNode:
         """Fact-Checker should return FLAGGED with claim list when issues found."""
         mock_response = Mock()
         mock_response.content = (
-            "Checking draft claims...\n"
-            "- Claim 'X is true' is not mentioned in research notes\n"
-            "- Claim 'Y contradicts' contradicts the notes\n"
-            "FLAGGED"
+            '{"verdict": "FLAGGED", "feedback": "- Claim \'X is true\' is not mentioned in research notes\\n'
+            '- Claim \'Y contradicts\' contradicts the notes"}'
         )
         mock_llm.return_value.invoke.return_value = mock_response
 
@@ -303,7 +298,7 @@ class TestFactCheckerNode:
         """Fact-Checker should not increment revision_count when PASS."""
         state_with_draft.revision_count = 1
         mock_response = Mock()
-        mock_response.content = "All claims verified.\nPASS"
+        mock_response.content = '{"verdict": "PASS", "feedback": "All claims verified."}'
         mock_llm.return_value.invoke.return_value = mock_response
 
         result = fact_checker_node(state_with_draft)
@@ -315,46 +310,45 @@ class TestReviewerNode:
     """Tests for the reviewer_node."""
 
     def test_reviewer_accepts_draft(self, state_with_draft, mock_llm):
-        """Reviewer should recognize ACCEPT verdict."""
+        """Reviewer should recognize ACCEPT verdict from JSON."""
         mock_response = Mock()
-        mock_response.content = "This draft is well-written and accurate.\nACCEPT"
+        mock_response.content = '{"verdict": "ACCEPT", "feedback": "This draft is well-written and accurate."}'
         mock_llm.return_value.invoke.return_value = mock_response
 
         result = reviewer_node(state_with_draft)
 
         assert "review_feedback" in result
-        assert "ACCEPT" in result["review_feedback"]
+        assert "well-written" in result["review_feedback"]
 
     def test_reviewer_requests_revision(self, state_with_draft, mock_llm):
-        """Reviewer should recognize REVISE verdict."""
+        """Reviewer should recognize REVISE verdict from JSON."""
         mock_response = Mock()
-        mock_response.content = "This needs more detail about X.\nREVISE"
+        mock_response.content = '{"verdict": "REVISE", "feedback": "This needs more detail about X."}'
         mock_llm.return_value.invoke.return_value = mock_response
 
         result = reviewer_node(state_with_draft)
 
         assert "review_feedback" in result
+        assert "more detail" in result["review_feedback"]
 
     def test_reviewer_increments_revision_on_revise(self, state_with_draft, mock_llm):
         """Reviewer should increment revision_count when verdict is REVISE."""
         state_with_draft.revision_count = 1
         mock_response = Mock()
-        mock_response.content = "More work needed.\nREVISE"
+        mock_response.content = '{"verdict": "REVISE", "feedback": "More work needed."}'
         mock_llm.return_value.invoke.return_value = mock_response
 
         result = reviewer_node(state_with_draft)
 
         assert result["revision_count"] == 2
-        assert "REVISE" in result["review_feedback"]
 
     def test_reviewer_does_not_increment_on_accept(self, state_with_draft, mock_llm):
         """Reviewer should not increment revision_count when verdict is ACCEPT."""
         state_with_draft.revision_count = 2
         mock_response = Mock()
-        mock_response.content = "Well written and accurate.\nACCEPT"
+        mock_response.content = '{"verdict": "ACCEPT", "feedback": "Well written and accurate."}'
         mock_llm.return_value.invoke.return_value = mock_response
 
         result = reviewer_node(state_with_draft)
 
         assert result["revision_count"] == 2
-        assert "ACCEPT" in result["review_feedback"]

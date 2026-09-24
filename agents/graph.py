@@ -17,7 +17,7 @@ shared across both feedback types to prevent infinite loops.
 
 from __future__ import annotations
 
-import re
+import json
 from typing import Annotated, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -33,33 +33,43 @@ from agents.tools import summarize, web_search
 # ---------------------------------------------------------------------------
 
 
-def extract_verdict(feedback: str, verdicts: tuple[str, str]) -> str:
-    """Extract verdict from LLM response using word boundary matching.
+def parse_structured_verdict(
+    response_text: str, verdicts: tuple[str, str]
+) -> tuple[str, str]:
+    """Parse verdict from structured JSON response.
 
     Parameters
     ----------
-    feedback:
-        The full LLM response text.
+    response_text:
+        The LLM response, expected to be JSON like:
+        {"verdict": "ACCEPT", "feedback": "The draft is well-written."}
     verdicts:
         Tuple of (positive_verdict, negative_verdict).
         E.g., ("PASS", "FLAGGED") or ("ACCEPT", "REVISE").
 
     Returns
     -------
-    str
-        The positive verdict if found with word boundaries, else the negative verdict.
+    tuple[str, str]
+        (verdict, full_feedback)
+        - verdict: the extracted verdict or default to negative_verdict
+        - full_feedback: the feedback string from JSON, or full response_text if parsing fails
 
-    Searches for whole-word matches using regex word boundaries (\b),
-    which prevents substring matches like "passes" matching "PASS".
+    Fail-safe: if JSON parsing fails or verdict field is missing, defaults to
+    negative_verdict (FLAGGED/REVISE) rather than false positives.
     """
     positive, negative = verdicts
 
-    last_line = feedback.upper().split("\n")[-1]
+    try:
+        data = json.loads(response_text)
+        verdict = data.get("verdict", "").upper().strip()
+        feedback = data.get("feedback", response_text)
 
-    if re.search(rf"\b{positive}\b", last_line):
-        return positive
-
-    return negative
+        if verdict == positive:
+            return (positive, feedback)
+        else:
+            return (negative, feedback)
+    except (json.JSONDecodeError, TypeError):
+        return (negative, response_text)
 
 
 # ---------------------------------------------------------------------------
@@ -235,11 +245,16 @@ def fact_checker_node(state: AgentState) -> dict:
             "For each major claim in the draft:\n"
             "  - If it's clearly supported by the research notes, it passes.\n"
             "  - If it contradicts the notes or is unsupported, flag it.\n\n"
-            "After checking all claims, output exactly one verdict on its own line:\n"
-            "  PASS -- all claims are supported by the research notes.\n"
-            "  FLAGGED -- some claims are unsupported or contradicted.\n\n"
-            "If FLAGGED, list each unsupported/contradicted claim below, starting "
-            "each line with '- ' (e.g., '- Claim is contradicted by note X')."
+            "Respond with a JSON object (and nothing else) in this exact format:\n"
+            "{\n"
+            '  "verdict": "PASS" or "FLAGGED",\n'
+            '  "feedback": "Your detailed findings. If FLAGGED, list each unsupported claim '
+            'on its own line starting with \'- \'"\n'
+            "}\n\n"
+            "Example if all claims pass:\n"
+            '{"verdict": "PASS", "feedback": "All claims are supported by the research notes."}\n\n'
+            "Example if claims are flagged:\n"
+            '{"verdict": "FLAGGED", "feedback": "- Claim X is not mentioned in the notes\\n- Claim Y contradicts the notes"}'
         )
     )
 
@@ -251,9 +266,7 @@ def fact_checker_node(state: AgentState) -> dict:
     )
 
     response = llm.invoke([system, human])
-    feedback = response.content
-
-    verdict = extract_verdict(feedback, ("PASS", "FLAGGED"))
+    verdict, feedback = parse_structured_verdict(response.content, ("PASS", "FLAGGED"))
 
     flagged_claims = []
     if verdict == "FLAGGED":
@@ -288,17 +301,21 @@ def reviewer_node(state: AgentState) -> dict:
             "You are a meticulous editor. Review the draft below for clarity, "
             "structure, coherence, and writing quality. Provide brief, actionable "
             "feedback.\n\n"
-            "End your review with exactly one of these verdicts on its own line:\n"
-            "  ACCEPT -- the draft is ready for publication.\n"
-            "  REVISE -- the draft needs further work."
+            "Respond with a JSON object (and nothing else) in this exact format:\n"
+            "{\n"
+            '  "verdict": "ACCEPT" or "REVISE",\n'
+            '  "feedback": "Your detailed editorial feedback"\n'
+            "}\n\n"
+            "Example if the draft is ready:\n"
+            '{"verdict": "ACCEPT", "feedback": "The draft is well-written, clear, and ready for publication."}\n\n'
+            "Example if revision is needed:\n"
+            '{"verdict": "REVISE", "feedback": "The draft needs better transitions between sections and more concrete examples."}'
         )
     )
     human = HumanMessage(content=f"Draft:\n{state.draft}")
 
     response = llm.invoke([system, human])
-    feedback = response.content
-
-    verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
+    verdict, feedback = parse_structured_verdict(response.content, ("ACCEPT", "REVISE"))
 
     revision_count = state.revision_count
     if verdict == "REVISE":
