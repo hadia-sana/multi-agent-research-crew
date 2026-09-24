@@ -110,6 +110,30 @@ $ uv run python main.py "Compare React and Svelte for building modern web apps"
 ...
 ```
 
+## Testing
+
+This project includes a pytest test suite covering routing logic and tools.
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run tests with verbose output
+uv run pytest -v
+
+# Run tests for a specific file
+uv run pytest tests/test_graph.py
+
+# Run with coverage report
+uv run pytest --cov=agents
+```
+
+Tests are located in `tests/` and include:
+- **test_graph.py** — Unit tests for supervisor routing logic and agent nodes
+- **test_tools.py** — Unit tests for web search and summarization tools
+
+All external calls (LLM, web search) are mocked, so tests run without requiring API keys.
+
 ## Docker
 
 ```bash
