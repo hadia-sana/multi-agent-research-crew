@@ -17,6 +17,7 @@ shared across both feedback types to prevent infinite loops.
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -26,6 +27,40 @@ from pydantic import BaseModel, Field
 
 from agents.config import get_llm
 from agents.tools import summarize, web_search
+
+# ---------------------------------------------------------------------------
+# Verdict extraction helpers
+# ---------------------------------------------------------------------------
+
+
+def extract_verdict(feedback: str, verdicts: tuple[str, str]) -> str:
+    """Extract verdict from LLM response using word boundary matching.
+
+    Parameters
+    ----------
+    feedback:
+        The full LLM response text.
+    verdicts:
+        Tuple of (positive_verdict, negative_verdict).
+        E.g., ("PASS", "FLAGGED") or ("ACCEPT", "REVISE").
+
+    Returns
+    -------
+    str
+        The positive verdict if found with word boundaries, else the negative verdict.
+
+    Searches for whole-word matches using regex word boundaries (\b),
+    which prevents substring matches like "passes" matching "PASS".
+    """
+    positive, negative = verdicts
+
+    last_line = feedback.upper().split("\n")[-1]
+
+    if re.search(rf"\b{positive}\b", last_line):
+        return positive
+
+    return negative
+
 
 # ---------------------------------------------------------------------------
 # State
@@ -218,9 +253,7 @@ def fact_checker_node(state: AgentState) -> dict:
     response = llm.invoke([system, human])
     feedback = response.content
 
-    verdict = "FLAGGED"
-    if "PASS" in feedback.upper().split("\n")[-1]:
-        verdict = "PASS"
+    verdict = extract_verdict(feedback, ("PASS", "FLAGGED"))
 
     flagged_claims = []
     if verdict == "FLAGGED":
@@ -265,9 +298,7 @@ def reviewer_node(state: AgentState) -> dict:
     response = llm.invoke([system, human])
     feedback = response.content
 
-    verdict = "REVISE"
-    if "ACCEPT" in feedback.upper().split("\n")[-1]:
-        verdict = "ACCEPT"
+    verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
 
     revision_count = state.revision_count
     if verdict == "REVISE":

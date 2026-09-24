@@ -12,6 +12,7 @@ from agents.graph import (
     fact_checker_node,
     reviewer_node,
     route_supervisor,
+    extract_verdict,
 )
 
 
@@ -57,6 +58,58 @@ def state_with_accept_verdict():
         review_feedback="ACCEPT",
         next_agent="FINISH",
     )
+
+
+class TestVerdictExtraction:
+    """Tests for robust verdict extraction with word boundaries."""
+
+    def test_extract_verdict_exact_match(self):
+        """Should extract PASS when it's a standalone word."""
+        feedback = "All claims are verified and accurate.\nPASS"
+        verdict = extract_verdict(feedback, ("PASS", "FLAGGED"))
+        assert verdict == "PASS"
+
+    def test_extract_verdict_rejects_substring_match(self):
+        """Should NOT extract PASS from 'passes' or 'passed'."""
+        feedback = "This draft passes all quality checks.\nThe analysis passes validation."
+        verdict = extract_verdict(feedback, ("PASS", "FLAGGED"))
+        assert verdict == "FLAGGED"  # Should default to FLAGGED
+
+    def test_extract_verdict_rejects_partial_word(self):
+        """Should NOT extract ACCEPT from 'unacceptable'."""
+        feedback = (
+            "This draft contains claims that are unacceptable.\n"
+            "The methodology is not acceptable under these constraints."
+        )
+        verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
+        assert verdict == "REVISE"  # Should default to REVISE
+
+    def test_extract_verdict_case_insensitive(self):
+        """Should extract verdict regardless of case."""
+        feedback = "Everything checks out.\naccept"
+        verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
+        assert verdict == "ACCEPT"
+
+    def test_extract_verdict_with_punctuation(self):
+        """Should extract verdict even if followed by punctuation."""
+        feedback = "Analysis complete. PASS!"
+        verdict = extract_verdict(feedback, ("PASS", "FLAGGED"))
+        assert verdict == "PASS"
+
+    def test_extract_verdict_multiline_last_line_matters(self):
+        """Should check only the last line of LLM output."""
+        feedback = "Some good points here.\nREVISE needed for clarity."
+        verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
+        assert verdict == "REVISE"
+
+    def test_extract_verdict_false_positives_prevented(self):
+        """Realistic false-positive case: contains keyword in prose."""
+        feedback = (
+            "The draft cannot be accepted due to factual errors.\n"
+            "This verdict is REVISE."
+        )
+        verdict = extract_verdict(feedback, ("ACCEPT", "REVISE"))
+        assert verdict == "REVISE"  # Not fooled by "accepted" in first line
 
 
 class TestSupervisorRouting:
