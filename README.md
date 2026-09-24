@@ -13,14 +13,17 @@ flowchart LR
     subgraph Agents
         RES["Researcher\n(web search + summarize)"]
         WRI["Writer\n(draft / revise)"]
-        REV["Reviewer\n(critique + verdict)"]
+        FC["Fact-Checker\n(verify claims)"]
+        REV["Reviewer\n(critique quality)"]
     end
 
     SUP -->|route| RES
     SUP -->|route| WRI
+    SUP -->|route| FC
     SUP -->|route| REV
     RES -->|notes| SUP
     WRI -->|draft| SUP
+    FC -->|verdict| SUP
     REV -->|verdict| SUP
     SUP -->|complete| FIN([FINISH])
 ```
@@ -29,18 +32,20 @@ flowchart LR
 
 | Agent | Role | Tools |
 |---|---|---|
-| **Supervisor** | Inspects shared state and routes work to the appropriate specialist agent. Decides when the task is complete. | None (LLM-based routing) |
+| **Supervisor** | Inspects shared state and routes work to the appropriate specialist agent. Enforces revision cap to prevent infinite loops. | None (LLM-based routing) |
 | **Researcher** | Gathers information from the web relevant to the user's query and distils it into structured notes. | `web_search` (DuckDuckGo), `summarize` |
-| **Writer** | Transforms research notes into a polished, well-structured report. Incorporates reviewer feedback on revisions. | LLM generation |
-| **Reviewer** | Critiques the draft for accuracy, clarity, and completeness. Issues an **ACCEPT** or **REVISE** verdict. | LLM evaluation |
+| **Writer** | Transforms research notes into a polished, well-structured report. Incorporates feedback from Fact-Checker or Reviewer on revisions. | LLM generation |
+| **Fact-Checker** | Cross-checks specific factual claims in the draft against the researcher's original notes. Flags unsupported or contradicted claims. | LLM evaluation |
+| **Reviewer** | Critiques the draft for writing quality, clarity, structure, and coherence. Issues an **ACCEPT** or **REVISE** verdict. | LLM evaluation |
 
 ### Key Patterns
 
-- **Supervisor routing** -- a central coordinator node uses conditional edges to dispatch work, avoiding brittle hard-coded pipelines.
-- **Human-in-the-loop** -- the graph can be paused before the reviewer node using LangGraph's `interrupt_before` mechanism, allowing a human to inject feedback.
+- **Two-stage review** -- fact-checking for factual accuracy (against research notes) is distinct from writing quality review. Both feedback types loop back to the Writer, with a shared revision counter to prevent infinite loops.
+- **Supervisor routing** -- a central coordinator node uses conditional edges to dispatch work, avoiding brittle hard-coded pipelines. The Supervisor enforces a MAX_REVISIONS cap across both Fact-Checker and Reviewer feedback.
+- **Atomic state resets** -- when the Writer revises due to Fact-Checker flags or Reviewer feedback, the relevant state fields are atomically cleared so the next review agent performs a fresh evaluation on the updated draft.
 - **Tool use** -- the researcher agent calls external tools (`web_search`, `summarize`) to gather and condense information.
 - **Multi-provider LLM** -- switch between OpenAI and Anthropic with a single environment variable.
-- **Iterative refinement** -- the writer-reviewer loop runs up to 3 revision cycles, ensuring output quality.
+- **Iterative refinement** -- the system runs up to 3 revision cycles total across Fact-Checker and Reviewer feedback, ensuring both factual accuracy and writing quality.
 
 ## Quick Start
 

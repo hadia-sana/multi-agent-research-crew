@@ -9,6 +9,7 @@ from agents.graph import (
     supervisor_node,
     researcher_node,
     writer_node,
+    fact_checker_node,
     reviewer_node,
     route_supervisor,
 )
@@ -199,6 +200,64 @@ class TestWriterNode:
         assert "feedback" in str(call_args).lower() or "revision" in str(call_args).lower()
 
 
+class TestFactCheckerNode:
+    """Tests for the fact_checker_node."""
+
+    def test_fact_checker_passes_when_all_claims_supported(
+        self, state_with_draft, mock_llm
+    ):
+        """Fact-Checker should return PASS when all claims are supported."""
+        mock_response = Mock()
+        mock_response.content = "All claims in the draft are supported by the research notes.\nPASS"
+        mock_llm.return_value.invoke.return_value = mock_response
+
+        result = fact_checker_node(state_with_draft)
+
+        assert result["fact_check_verdict"] == "PASS"
+        assert result["flagged_claims"] == []
+
+    def test_fact_checker_flags_unsupported_claims(self, state_with_draft, mock_llm):
+        """Fact-Checker should return FLAGGED with claim list when issues found."""
+        mock_response = Mock()
+        mock_response.content = (
+            "Checking draft claims...\n"
+            "- Claim 'X is true' is not mentioned in research notes\n"
+            "- Claim 'Y contradicts' contradicts the notes\n"
+            "FLAGGED"
+        )
+        mock_llm.return_value.invoke.return_value = mock_response
+
+        result = fact_checker_node(state_with_draft)
+
+        assert result["fact_check_verdict"] == "FLAGGED"
+        assert len(result["flagged_claims"]) == 2
+        assert "is not mentioned" in result["flagged_claims"][0]
+
+    def test_fact_checker_increments_revision_on_flagged(
+        self, state_with_draft, mock_llm
+    ):
+        """Fact-Checker should increment revision_count only when FLAGGED."""
+        state_with_draft.revision_count = 0
+        mock_response = Mock()
+        mock_response.content = "- Unsupported claim\nFLAGGED"
+        mock_llm.return_value.invoke.return_value = mock_response
+
+        result = fact_checker_node(state_with_draft)
+
+        assert result["revision_count"] == 1
+
+    def test_fact_checker_does_not_increment_on_pass(self, state_with_draft, mock_llm):
+        """Fact-Checker should not increment revision_count when PASS."""
+        state_with_draft.revision_count = 1
+        mock_response = Mock()
+        mock_response.content = "All claims verified.\nPASS"
+        mock_llm.return_value.invoke.return_value = mock_response
+
+        result = fact_checker_node(state_with_draft)
+
+        assert result["revision_count"] == 1
+
+
 class TestReviewerNode:
     """Tests for the reviewer_node."""
 
@@ -223,16 +282,26 @@ class TestReviewerNode:
 
         assert "review_feedback" in result
 
-    def test_reviewer_enforces_max_revisions(self, state_with_draft, mock_llm):
-        """Reviewer should auto-accept after MAX_REVISIONS."""
-        from agents.graph import MAX_REVISIONS
-
-        state_with_draft.revision_count = MAX_REVISIONS - 1
+    def test_reviewer_increments_revision_on_revise(self, state_with_draft, mock_llm):
+        """Reviewer should increment revision_count when verdict is REVISE."""
+        state_with_draft.revision_count = 1
         mock_response = Mock()
         mock_response.content = "More work needed.\nREVISE"
         mock_llm.return_value.invoke.return_value = mock_response
 
         result = reviewer_node(state_with_draft)
 
-        assert result["revision_count"] == MAX_REVISIONS
-        assert "Auto-accepted" in result["review_feedback"]
+        assert result["revision_count"] == 2
+        assert "REVISE" in result["review_feedback"]
+
+    def test_reviewer_does_not_increment_on_accept(self, state_with_draft, mock_llm):
+        """Reviewer should not increment revision_count when verdict is ACCEPT."""
+        state_with_draft.revision_count = 2
+        mock_response = Mock()
+        mock_response.content = "Well written and accurate.\nACCEPT"
+        mock_llm.return_value.invoke.return_value = mock_response
+
+        result = reviewer_node(state_with_draft)
+
+        assert result["revision_count"] == 2
+        assert "ACCEPT" in result["review_feedback"]
