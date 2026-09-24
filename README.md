@@ -1,5 +1,7 @@
 # Multi-Agent Research Assistant
 
+[![CI](https://github.com/hadia-sana/multi-agent-research-crew/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hadia-sana/multi-agent-research-crew/actions/workflows/ci.yml)
+
 A production-quality multi-agent system built with [LangGraph](https://github.com/langchain-ai/langgraph) that automates research, writing, and editorial review through coordinated AI agents.
 
 ## Architecture
