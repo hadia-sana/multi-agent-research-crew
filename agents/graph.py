@@ -36,13 +36,17 @@ from agents.tools import summarize, web_search
 def parse_structured_verdict(
     response_text: str, verdicts: tuple[str, str]
 ) -> tuple[str, str]:
-    """Parse verdict from structured JSON response.
+    """Parse verdict from structured JSON response with markdown fence stripping.
 
     Parameters
     ----------
     response_text:
         The LLM response, expected to be JSON like:
         {"verdict": "ACCEPT", "feedback": "The draft is well-written."}
+        May also be wrapped in markdown code fences:
+        ```json
+        {"verdict": "ACCEPT", "feedback": "..."}
+        ```
     verdicts:
         Tuple of (positive_verdict, negative_verdict).
         E.g., ("PASS", "FLAGGED") or ("ACCEPT", "REVISE").
@@ -56,11 +60,23 @@ def parse_structured_verdict(
 
     Fail-safe: if JSON parsing fails or verdict field is missing, defaults to
     negative_verdict (FLAGGED/REVISE) rather than false positives.
+
+    Handles common LLM output patterns:
+    - Raw JSON: {"verdict": "...", "feedback": "..."}
+    - Markdown fences: ```json {...} ``` or ``` {...} ```
     """
     positive, negative = verdicts
 
     try:
-        data = json.loads(response_text)
+        cleaned = response_text.strip()
+
+        if cleaned.startswith("```"):
+            cleaned = cleaned.lstrip("`").lstrip("json").lstrip("`").strip()
+
+        if cleaned.endswith("```"):
+            cleaned = cleaned.rstrip("`").strip()
+
+        data = json.loads(cleaned)
         verdict = data.get("verdict", "").upper().strip()
         feedback = data.get("feedback", response_text)
 
@@ -68,7 +84,7 @@ def parse_structured_verdict(
             return (positive, feedback)
         else:
             return (negative, feedback)
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError, ValueError):
         return (negative, response_text)
 
 

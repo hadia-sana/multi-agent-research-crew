@@ -108,6 +108,41 @@ class TestVerdictExtraction:
         verdict, feedback = parse_structured_verdict(response, ("ACCEPT", "REVISE"))
         assert verdict == "REVISE"  # Fails safe to negative verdict
 
+    def test_parse_structured_verdict_with_markdown_fence_backticks(self):
+        """Should parse JSON correctly when wrapped in markdown code fences."""
+        response = '```json\n{"verdict": "ACCEPT", "feedback": "Well written."}\n```'
+        verdict, feedback = parse_structured_verdict(response, ("ACCEPT", "REVISE"))
+        assert verdict == "ACCEPT"
+        assert "Well written" in feedback
+
+    def test_parse_structured_verdict_with_generic_markdown_fence(self):
+        """Should parse JSON correctly when wrapped in generic ``` fences (no language tag)."""
+        response = '```\n{"verdict": "PASS", "feedback": "All claims verified."}\n```'
+        verdict, feedback = parse_structured_verdict(response, ("PASS", "FLAGGED"))
+        assert verdict == "PASS"
+        assert "All claims" in feedback
+
+    def test_parse_structured_verdict_with_whitespace_and_fences(self):
+        """Should handle whitespace and fences robustly."""
+        response = """
+        ```json
+        {
+          "verdict": "REVISE",
+          "feedback": "Needs work"
+        }
+        ```
+        """
+        verdict, feedback = parse_structured_verdict(response, ("ACCEPT", "REVISE"))
+        assert verdict == "REVISE"
+        assert "Needs work" in feedback
+
+    def test_parse_structured_verdict_negation_with_wrapped_json(self):
+        """Should correctly parse negation in wrapped JSON format."""
+        response = '```json\n{"verdict": "REVISE", "feedback": "Cannot accept: too many unsupported claims"}\n```'
+        verdict, feedback = parse_structured_verdict(response, ("ACCEPT", "REVISE"))
+        assert verdict == "REVISE"
+        assert "Cannot accept" in feedback
+
 
 class TestSupervisorRouting:
     """Tests for supervisor_node routing logic."""
