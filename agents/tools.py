@@ -22,30 +22,24 @@ def web_search(query: str) -> str:
     str
         Formatted search results with titles, URLs, and content snippets.
     """
-    # Lazy import so the dependency is only required at runtime when the tool
-    # is actually invoked (DuckDuckGo is provided by langchain-community).
+    from ddgs import DDGS
+
     try:
-        from langchain_community.tools.ddg_search import DuckDuckGoSearchResults
-    except ImportError:
-        from langchain_community.tools import DuckDuckGoSearchRun
-        search = DuckDuckGoSearchRun()
-        results_str = search.run(query)
-        return results_str
+        results = DDGS().text(query, max_results=5)
 
-    search = DuckDuckGoSearchResults(max_results=5)
-    results = search.invoke(query)
+        if not results:
+            return "No results found."
 
-    if not results:
-        return "No results found."
+        formatted: list[str] = []
+        for idx, result in enumerate(results, 1):
+            title = result.get("title", "Untitled")
+            url = result.get("href", "")
+            content = result.get("body", "")
+            formatted.append(f"[{idx}] {title}\n    {url}\n    {content}")
 
-    formatted: list[str] = []
-    for idx, result in enumerate(results, 1):
-        title = result.get("title", "Untitled")
-        url = result.get("link", result.get("url", ""))
-        content = result.get("snippet", "")
-        formatted.append(f"[{idx}] {title}\n    {url}\n    {content}")
-
-    return "\n\n".join(formatted)
+        return "\n\n".join(formatted)
+    except Exception as e:
+        return f"Search error: {str(e)}"
 
 
 @tool
