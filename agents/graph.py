@@ -16,6 +16,7 @@ iterations is reached.
 
 from __future__ import annotations
 
+import time
 from typing import Annotated, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -51,6 +52,7 @@ class AgentState(BaseModel):
 
 def supervisor_node(state: AgentState) -> dict:
     """Decide which agent should act next based on the current state."""
+    time.sleep(1)  # Delay to prevent throttling
     llm = get_llm()
 
     system = SystemMessage(
@@ -108,6 +110,7 @@ def supervisor_node(state: AgentState) -> dict:
 
 def researcher_node(state: AgentState) -> dict:
     """Use tools to research the user's query."""
+    time.sleep(1)  # Delay to prevent throttling
     llm = get_llm()
     query = state.messages[0].content if state.messages else "general research"
 
@@ -125,6 +128,7 @@ def researcher_node(state: AgentState) -> dict:
 
 def writer_node(state: AgentState) -> dict:
     """Produce or revise a written draft from the research notes."""
+    time.sleep(1)  # Delay to prevent throttling
     llm = get_llm()
 
     revision_context = ""
@@ -157,6 +161,7 @@ def writer_node(state: AgentState) -> dict:
 
 def reviewer_node(state: AgentState) -> dict:
     """Critique the draft and decide whether to accept or request revision."""
+    time.sleep(1)  # Delay to prevent throttling
     llm = get_llm()
 
     system = SystemMessage(

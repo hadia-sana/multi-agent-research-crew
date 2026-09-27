@@ -59,6 +59,9 @@ uv run python main.py "What are the latest breakthroughs in quantum computing?"
 
 # Verbose mode (full agent output)
 uv run python main.py --verbose "Explain the current state of nuclear fusion energy"
+
+# Run the interactive Streamlit web UI
+uv run streamlit run app.py
 ```
 
 ## Environment Variables
@@ -68,7 +71,10 @@ uv run python main.py --verbose "Explain the current state of nuclear fusion ene
 | `OPENAI_API_KEY` | Yes (if `LLM_PROVIDER=openai`) | OpenAI API key (from [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys)) |
 | `ANTHROPIC_API_KEY` | Yes (if `LLM_PROVIDER=anthropic`) | Anthropic API key from [Anthropic Console](https://console.anthropic.com/account/keys) |
 | `GOOGLE_API_KEY` | Yes (if `LLM_PROVIDER=gemini`) | Google Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey) (free tier available) |
-| `LLM_PROVIDER` | No | `openai` (default), `anthropic`, or `gemini` |
+| `AWS_ACCESS_KEY_ID` | Yes (if `LLM_PROVIDER=bedrock`) | AWS access key ID from [AWS IAM](https://console.aws.amazon.com/iam) |
+| `AWS_SECRET_ACCESS_KEY` | Yes (if `LLM_PROVIDER=bedrock`) | AWS secret access key from [AWS IAM](https://console.aws.amazon.com/iam) |
+| `AWS_REGION` | No (if `LLM_PROVIDER=bedrock`) | AWS region for Bedrock (default: `us-east-1`) |
+| `LLM_PROVIDER` | No | `openai` (default), `anthropic`, `gemini`, or `bedrock` |
 
 ## Example Usage
 

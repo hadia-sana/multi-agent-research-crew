@@ -24,7 +24,13 @@ def web_search(query: str) -> str:
     """
     # Lazy import so the dependency is only required at runtime when the tool
     # is actually invoked (DuckDuckGo is provided by langchain-community).
-    from langchain_community.tools.ddg_search import DuckDuckGoSearchResults
+    try:
+        from langchain_community.tools.ddg_search import DuckDuckGoSearchResults
+    except ImportError:
+        from langchain_community.tools import DuckDuckGoSearchRun
+        search = DuckDuckGoSearchRun()
+        results_str = search.run(query)
+        return results_str
 
     search = DuckDuckGoSearchResults(max_results=5)
     results = search.invoke(query)
