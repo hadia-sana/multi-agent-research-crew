@@ -97,8 +97,12 @@ if run_button and query:
                         elif node_name.lower() == "writer":
                             with tab_outputs["writer"]:
                                 st.markdown(content)
+                                draft_text = node_output.get("draft", "")
+                                if draft_text:
+                                    with st.expander("View Draft Content", expanded=True):
+                                        st.markdown(draft_text)
                             final_draft = (
-                                node_output.get("draft", "") or final_draft
+                                draft_text or final_draft
                             )
                         elif node_name.lower() == "reviewer":
                             with tab_outputs["reviewer"]:

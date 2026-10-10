@@ -53,54 +53,18 @@ class AgentState(BaseModel):
 def supervisor_node(state: AgentState) -> dict:
     """Decide which agent should act next based on the current state."""
     time.sleep(1)  # Delay to prevent throttling
-    llm = get_llm()
-
-    system = SystemMessage(
-        content=(
-            "You are the supervisor of a research team.  Based on the "
-            "conversation so far, decide which agent should act next.\n\n"
-            "Agents:\n"
-            "  - researcher: gathers information from the web\n"
-            "  - writer: drafts a report from research notes\n"
-            "  - reviewer: critiques the draft\n"
-            "  - FINISH: the task is complete\n\n"
-            "Rules:\n"
-            "  1. If there are no research notes yet, pick 'researcher'.\n"
-            "  2. If there are research notes but no draft, pick 'writer'.\n"
-            "  3. If there is a draft but no review, pick 'reviewer'.\n"
-            "  4. If the review says 'ACCEPT', pick 'FINISH'.\n"
-            "  5. If the review says 'REVISE', pick 'writer'.\n\n"
-            "Respond with ONLY the agent name (one word)."
-        )
-    )
-
-    context_parts: list[str] = []
-    if state.research_notes:
-        context_parts.append(f"Research notes:\n{state.research_notes[:2000]}")
-    if state.draft:
-        context_parts.append(f"Current draft:\n{state.draft[:2000]}")
-    if state.review_feedback:
-        context_parts.append(f"Review feedback:\n{state.review_feedback}")
-
-    human = HumanMessage(
-        content=(
-            "Current state:\n"
-            + ("\n---\n".join(context_parts) if context_parts else "(empty -- no work done yet)")
-        )
-    )
-
-    response = llm.invoke([system, human])
-    next_agent = response.content.strip().lower().replace("'", "").replace('"', "")
-
-    # Normalise common LLM responses
-    if "finish" in next_agent:
-        next_agent = "FINISH"
-    elif "research" in next_agent:
+    
+    # Deterministic routing based on explicit rules
+    if not state.research_notes:
         next_agent = "researcher"
-    elif "writ" in next_agent:
+    elif not state.draft:
         next_agent = "writer"
-    elif "review" in next_agent:
+    elif not state.review_feedback:
         next_agent = "reviewer"
+    elif "ACCEPT" in state.review_feedback.upper():
+        next_agent = "FINISH"
+    else:
+        next_agent = "writer"
 
     return {
         "next_agent": next_agent,
@@ -155,6 +119,7 @@ def writer_node(state: AgentState) -> dict:
 
     return {
         "draft": draft,
+        "review_feedback": "",  # Clear feedback so supervisor routes to reviewer next
         "messages": [AIMessage(content=f"[Writer] Draft produced ({len(draft)} chars)")],
     }
 
