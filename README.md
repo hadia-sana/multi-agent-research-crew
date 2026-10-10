@@ -1,6 +1,6 @@
 # Multi-Agent Research Assistant
 
-A production-quality multi-agent system built with [LangGraph](https://github.com/langchain-ai/langgraph) that automates research, writing, and editorial review through coordinated AI agents.
+A production-quality multi-agent system built with [LangGraph](https://github.com/langchain-ai/langgraph) that automates research, writing, and editorial review through coordinated AI agents.PROJECT DEMO https://www.loom.com/share/e2e6a715492c4494a7fc575afb7d42f4
 
 ## Architecture
 
